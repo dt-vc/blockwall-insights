@@ -2,7 +2,6 @@
 
 A modern, Web3-styled static website for hosting Blockwall's crypto newsletter archive. Built for GitHub Pages with dark/light mode support.
 
-![Preview]([https://images.unsplash.com/photo-1639762681057-408e52192e55?w=1200&h=400&fit=crop](https://www.blockwall.vc/))
 
 ## ✨ Features
 
