@@ -1,0 +1,306 @@
+{
+  "name": "BW Newsletter - 3. Daily Output (FINAL)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT r.title, r.url, r.content, r.source_name, r.source_domain, r.published_at, e.category, e.significance_score, e.summary, e.sentiment, e.entities, e.key_facts FROM bw_articles_enriched e JOIN bw_articles_raw r ON e.raw_article_id = r.id WHERE e.is_duplicate = FALSE AND r.published_at >= NOW() - INTERVAL '24 hours' ORDER BY e.significance_score DESC, e.processed_at DESC LIMIT 100;",
+        "options": {}
+      },
+      "id": "fetch-articles",
+      "name": "Fetch Daily Enriched Articles",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 0],
+      "credentials": { "postgres": { "id": "cVf33e1WZ2q3MMFY", "name": "NeonDB PostgreSQL" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "id": "check", "leftValue": "={{ $json.title }}", "rightValue": "", "operator": { "type": "string", "operation": "exists" } }],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-articles",
+      "name": "If Articles Exist",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const articles = items.map(i => i.json);\n\nfunction getSourceName(url, dbSourceName) {\n  if (dbSourceName && dbSourceName.length > 2 && dbSourceName.length < 50 && !dbSourceName.includes('http') && !dbSourceName.includes('@')) return dbSourceName;\n  if (!url) return 'News';\n  try {\n    const domain = new URL(url).hostname.replace('www.', '').toLowerCase();\n    const map = { 'cointelegraph.com': 'Cointelegraph', 'theblock.co': 'The Block', 'coindesk.com': 'CoinDesk', 'decrypt.co': 'Decrypt', 'blockworks.co': 'Blockworks', 'dlnews.com': 'DL News', 'ft.com': 'Financial Times', 'bloomberg.com': 'Bloomberg', 'reuters.com': 'Reuters', 'cnbc.com': 'CNBC', 'forbes.com': 'Forbes', 'housingwire.com': 'HousingWire', 'propublica.org': 'ProPublica', 'cryptonews.com': 'CryptoNews', 'cvj.ch': 'CVJ.ch', 'ambcrypto.com': 'AMBCrypto', 'bitcoinmagazine.com': 'Bitcoin Magazine' };\n    if (map[domain]) return map[domain];\n    for (const [k, v] of Object.entries(map)) { if (domain.includes(k.split('.')[0])) return v; }\n    return domain.charAt(0).toUpperCase() + domain.slice(1).replace(/\\.(com|co|io)$/, '');\n  } catch (e) { return 'News'; }\n}\n\nfunction extractImage(url, content, category) {\n  const fallbacks = { 'DeFi': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&h=400&fit=crop', 'Regulation': 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800&h=400&fit=crop', 'Investment': 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&h=400&fit=crop', 'Ethereum': 'https://images.unsplash.com/photo-1622630998477-20aa696ecb05?w=800&h=400&fit=crop', 'Bitcoin': 'https://images.unsplash.com/photo-1518546305927-5a555bb7020d?w=800&h=400&fit=crop', 'Infrastructure': 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800&h=400&fit=crop', 'Tokenization': 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800&h=400&fit=crop', 'default': 'https://images.unsplash.com/photo-1639762681057-408e52192e55?w=800&h=400&fit=crop' };\n  if (content) {\n    const match = content.match(/<meta[^>]+property=[\"']og:image[\"'][^>]+content=[\"']([^\"']+)[\"']/i) || content.match(/<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+property=[\"']og:image[\"']/i);\n    if (match?.[1] && !match[1].includes('logo') && !match[1].includes('favicon') && match[1].length > 30) {\n      let img = match[1].startsWith('//') ? 'https:' + match[1] : match[1];\n      if (img.startsWith('http')) return img;\n    }\n  }\n  return fallbacks[category] || fallbacks['default'];\n}\n\nfunction getTopicKey(title) {\n  const l = (title || '').toLowerCase();\n  if (l.includes('fairshake')) return 'fairshake';\n  if (l.includes('flying tulip') || l.includes('cronje')) return 'flying-tulip';\n  if (l.includes('propy')) return 'propy';\n  if (l.includes('talos')) return 'talos';\n  if (l.includes('thedao') || (l.includes('dao') && l.includes('security'))) return 'thedao';\n  if (l.includes('escape velocity') || l.includes('depin fund')) return 'escape-velocity';\n  if (l.includes('cftc') || (l.includes('senate') && l.includes('crypto'))) return 'senate-cftc';\n  return l.replace(/[^a-z0-9]/g, '').slice(0, 30);\n}\n\narticles.forEach(a => { a.source_display = getSourceName(a.url, a.source_name); a.image_url = extractImage(a.url, a.content, a.category); a.topic_key = getTopicKey(a.title); });\n\nconst topicMap = new Map();\nfor (const a of articles) { if (!topicMap.has(a.topic_key) || a.significance_score > topicMap.get(a.topic_key).significance_score) topicMap.set(a.topic_key, a); }\nconst unique = Array.from(topicMap.values()).sort((a, b) => b.significance_score - a.significance_score);\n\nconst topStories = unique.filter(a => a.significance_score >= 7).slice(0, 6);\nconst topTopics = new Set(topStories.map(s => s.topic_key));\nconst otherStories = unique.filter(a => !topTopics.has(a.topic_key)).slice(0, 10);\n\nconst sentiment = { bullish: 0, bearish: 0, neutral: 0 };\nunique.forEach(a => sentiment[a.sentiment || 'neutral']++);\n\nconst today = new Date();\nconst months = ['January','February','March','April','May','June','July','August','September','October','November','December'];\nconst pad = n => n.toString().padStart(2, '0');\n\nreturn [{ json: {\n  date: today.toISOString().split('T')[0],\n  date_display: months[today.getMonth()] + ' ' + today.getDate() + ', ' + today.getFullYear(),\n  filename: 'blockwall-daily-' + today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate()) + '.html',\n  total_articles: unique.length,\n  top_stories: topStories,\n  other_stories: otherStories,\n  sentiment_distribution: sentiment\n}}];"
+      },
+      "id": "prepare-context",
+      "name": "Prepare Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = items[0].json;\nconst briefs = data.top_stories.slice(0, 3).map((s, i) => `${i+1}. ${s.title} (${s.source_display})\\n   ${s.summary}`).join('\\n\\n');\n\nconst prompt = `Write a 2-sentence newsletter intro for Blockwall (European crypto VC).\n\nRULES:\n- Start EXACTLY with: \"Dear Founders, Investors, and Friends,\"\n- Then 2 sentences summarizing today's themes (under 50 words)\n- NO em dashes, NO semicolons\n- CRITICAL: NO [1][2][3] citation markers\n\nSTORIES:\\n${briefs}\\n\\nWrite only the intro.`;\n\nreturn [{ json: { ...data, intro_prompt: prompt } }];"
+      },
+      "id": "build-intro-prompt",
+      "name": "Build Intro Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.perplexity.ai/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "perplexityApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"model\": \"sonar\", \"messages\": [{\"role\": \"user\", \"content\": {{ JSON.stringify($json.intro_prompt) }}}], \"max_tokens\": 200, \"temperature\": 0.4 }",
+        "options": {}
+      },
+      "id": "generate-intro",
+      "name": "Generate Intro",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 0],
+      "credentials": { "perplexityApi": { "id": "CODDiaIgkkcIWMPa", "name": "Perplexity" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "let intro = (items[0].json.choices?.[0]?.message?.content || 'Dear Founders, Investors, and Friends, here are today\\'s top crypto developments.').replace(/—/g, ', ').replace(/–/g, ', ').replace(/;/g, '.').replace(/\\[\\d+\\]/g, '').replace(/\\s+/g, ' ').trim();\nconst data = $('Build Intro Prompt').all()[0].json;\nreturn [{ json: { ...data, newsletter_intro: intro } }];"
+      },
+      "id": "extract-intro",
+      "name": "Extract Intro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = items[0].json;\nconst stories = data.top_stories.map((s, i) => `STORY ${i+1}:\\nTitle: ${s.title}\\nSource: ${s.source_display}\\nCategory: ${s.category}\\nOriginal: ${s.summary}`).join('\\n\\n');\n\nconst prompt = `Expand each story to 3-4 factual sentences. Newsletter style for crypto investors.\n\nRULES:\n- 3-4 sentences per story (not 2, not 5)\n- Add context: why it matters, who's involved, market implications\n- Be factual, NO invented details\n- NO em dashes, NO semicolons\n- NO [1][2][3] citations\n- End each with a period\n\nSTORIES:\\n${stories}\\n\\nOutput numbered summaries only:\\n1. [3-4 sentences]\\n2. [3-4 sentences]\\netc.`;\n\nreturn [{ json: { ...data, expand_prompt: prompt } }];"
+      },
+      "id": "build-expand-prompt",
+      "name": "Build Expand Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.perplexity.ai/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "perplexityApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"model\": \"sonar\", \"messages\": [{\"role\": \"user\", \"content\": {{ JSON.stringify($json.expand_prompt) }}}], \"max_tokens\": 2000, \"temperature\": 0.3 }",
+        "options": {}
+      },
+      "id": "generate-expanded",
+      "name": "Generate Expanded Summaries",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 0],
+      "credentials": { "perplexityApi": { "id": "CODDiaIgkkcIWMPa", "name": "Perplexity" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = items[0].json.choices?.[0]?.message?.content || '';\nconst data = $('Build Expand Prompt').all()[0].json;\n\nconst expanded = [];\nconst lines = text.split('\\n');\nlet current = '';\nfor (const line of lines) {\n  const match = line.match(/^(\\d+)\\.\\s*(.*)/);\n  if (match) {\n    if (current) expanded.push(current.replace(/—/g, ', ').replace(/–/g, ', ').replace(/;/g, '.').replace(/\\[\\d+\\]/g, '').trim());\n    current = match[2];\n  } else if (current && line.trim()) {\n    current += ' ' + line.trim();\n  }\n}\nif (current) expanded.push(current.replace(/—/g, ', ').replace(/–/g, ', ').replace(/;/g, '.').replace(/\\[\\d+\\]/g, '').trim());\n\ndata.top_stories.forEach((s, i) => { s.expanded_summary = expanded[i] || s.summary; });\nreturn [{ json: data }];"
+      },
+      "id": "extract-expanded",
+      "name": "Extract Expanded Summaries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = items[0].json;\nconst summaries = data.top_stories.slice(0,3).map((s,i) => `${i+1}. ${s.title}\\n   ${s.expanded_summary}`).join('\\n\\n');\n\nconst prompt = `Write a LinkedIn post for Blockwall (European crypto VC). 200-250 words.\n\nRULES:\n- Start: \"Dear Founders, Investors, and Friends,\"\n- Cover the 3 stories below with context\n- NO em dashes, NO semicolons\n- End with engaging question\n- Last line: #Web3 #Crypto #Blockchain #CryptoVC\n- NO [1][2][3] references, NO URLs\n\nSTORIES:\\n${summaries}`;\n\nreturn [{ json: { ...data, linkedin_prompt: prompt } }];"
+      },
+      "id": "build-linkedin",
+      "name": "Build LinkedIn Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.perplexity.ai/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "perplexityApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"model\": \"sonar\", \"messages\": [{\"role\": \"user\", \"content\": {{ JSON.stringify($json.linkedin_prompt) }}}], \"max_tokens\": 1000, \"temperature\": 0.5 }",
+        "options": {}
+      },
+      "id": "generate-linkedin",
+      "name": "Generate LinkedIn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2420, 0],
+      "credentials": { "perplexityApi": { "id": "CODDiaIgkkcIWMPa", "name": "Perplexity" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const linkedin = (items[0].json.choices?.[0]?.message?.content || '').replace(/—/g, ', ').replace(/–/g, ', ').replace(/;/g, '.').replace(/\\[\\d+\\]/g, '').trim();\nconst data = $('Build LinkedIn Prompt').all()[0].json;\nreturn [{ json: { ...data, linkedin_post: linkedin, timestamp: new Date().toISOString().slice(0,16).replace('T',' ') } }];"
+      },
+      "id": "extract-linkedin",
+      "name": "Extract LinkedIn",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2640, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $json;\nconst top = d.top_stories || [];\nconst other = d.other_stories || [];\nconst sent = d.sentiment_distribution || {};\n\nlet html = `<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Blockwall Daily Insights - ${d.date_display}</title>\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n  <link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n  <link rel=\"stylesheet\" href=\"../assets/css/newsletter.css\">\n</head>\n<body data-theme=\"dark\">\n  <nav class=\"nav\"><div class=\"nav-inner\">\n    <a href=\"../index.html\" class=\"nav-brand\"><div class=\"nav-logo\">BW</div><span>Blockwall Insights</span></a>\n    <div class=\"nav-links\"><a href=\"index.html\" class=\"nav-link active\">Daily</a><a href=\"../weekly/index.html\" class=\"nav-link\">Weekly</a><a href=\"../monthly/index.html\" class=\"nav-link\">Monthly</a></div>\n    <button class=\"theme-toggle\" onclick=\"toggleTheme()\"><span id=\"theme-icon\">🌙</span></button>\n  </div></nav>\n  <div class=\"container\">\n    <a href=\"index.html\" class=\"back-link\">← Back to Daily Archive</a>\n    <div class=\"header\"><div class=\"header-label\">Blockwall Capital</div><h1>Daily Insights</h1><div class=\"header-date\">${d.date_display}</div></div>\n    <div class=\"stats\">\n      <div class=\"stat\"><div class=\"stat-value\">${d.total_articles}</div><div class=\"stat-label\">Sources</div></div>\n      <div class=\"stat\"><div class=\"stat-value\">${top.length}</div><div class=\"stat-label\">Key Stories</div></div>\n      <div class=\"stat\"><div class=\"stat-value bullish\">${sent.bullish||0}</div><div class=\"stat-label\">Bullish</div></div>\n      <div class=\"stat\"><div class=\"stat-value bearish\">${sent.bearish||0}</div><div class=\"stat-label\">Bearish</div></div>\n    </div>\n    <div class=\"intro\">${d.newsletter_intro.replace(/\\n/g, '<br>')}</div>\\n`;\n\nfor (const s of top) {\n  html += `    <div class=\"story\">\n      <h2 class=\"story-title\">${s.title}</h2>\n      <img class=\"story-img\" src=\"${s.image_url}\" alt=\"${s.title}\" onerror=\"this.src='https://images.unsplash.com/photo-1639762681057-408e52192e55?w=800&h=400&fit=crop'\">\n      <div class=\"story-meta\">${s.source_display} &bull; ${s.category||'News'} &bull; Score: ${s.significance_score}/10</div>\n      <p class=\"story-summary\">${s.expanded_summary || s.summary}</p>\n      <a class=\"story-link\" href=\"${s.url}\" target=\"_blank\">Read full article →</a>\n    </div>\\n`;\n}\n\nhtml += `    <div class=\"divider\"></div>\n    <div><h2 class=\"section-title\">📰 Also Worth Reading</h2><ul class=\"other-list\">\\n`;\nfor (const s of other) html += `      <li><a href=\"${s.url}\" target=\"_blank\">${s.title}</a> <span class=\"other-source\">(${s.source_display})</span></li>\\n`;\nhtml += `    </ul></div>\n    <div class=\"divider\"></div>\n    <div class=\"linkedin-box\"><h3>💼 LinkedIn Ready</h3><p class=\"linkedin-label\">Copy and paste:</p><div class=\"linkedin-content\">${d.linkedin_post}</div></div>\n    <div><h3 class=\"section-title\">📚 Sources</h3><ul class=\"sources-list\">\\n`;\ntop.forEach((s,i) => html += `      <li><span class=\"source-num\">[${i+1}]</span> <a href=\"${s.url}\">${s.title}</a> <span class=\"other-source\">(${s.source_display})</span></li>\\n`);\nhtml += `    </ul></div>\n    <div class=\"cta\"><h3>Help Us Improve</h3><p>Your feedback shapes future editions</p><a class=\"cta-btn\" href=\"https://forms.gle/XbMK8JwSeEq6RTby6\" target=\"_blank\">Share Feedback →</a></div>\n    <div class=\"footer\">Blockwall Capital &bull; Frankfurt, Germany</div>\n  </div>\n  <script>function toggleTheme(){const b=document.body,i=document.getElementById('theme-icon');if(b.getAttribute('data-theme')==='dark'){b.setAttribute('data-theme','light');i.textContent='☀️';localStorage.setItem('theme','light');}else{b.setAttribute('data-theme','dark');i.textContent='🌙';localStorage.setItem('theme','dark');}}const t=localStorage.getItem('theme')||'dark';document.body.setAttribute('data-theme',t);document.getElementById('theme-icon').textContent=t==='dark'?'🌙':'☀️';</script>\n</body></html>`;\n\nreturn [{ json: { ...d, html_content: html } }];"
+      },
+      "id": "build-html",
+      "name": "Build HTML Newsletter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2860, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $json;\nconst top = d.top_stories || [];\nconst other = d.other_stories || [];\nconst sent = d.sentiment_distribution || {};\n\nconst emoji = s => s?.toLowerCase() === 'bullish' ? '🟢' : s?.toLowerCase() === 'bearish' ? '🔴' : '⚪';\nconst topList = top.map(s => emoji(s.sentiment) + ' <' + s.url + '|' + s.title + '>\\n     📰 ' + s.source_display + ' • 🏷️ ' + (s.category || 'General') + ' • ⭐ ' + s.significance_score + '/10').join('\\n\\n');\nconst otherList = other.slice(0, 5).map(s => emoji(s.sentiment) + ' <' + s.url + '|' + s.title + '> (' + s.source_display + ')').join('\\n');\n\nreturn [{ json: { ...d, top_stories_list: topList, other_stories_list: otherList, sentiment_summary: '🟢 ' + (sent.bullish||0) + ' bullish • 🔴 ' + (sent.bearish||0) + ' bearish • ⚪ ' + (sent.neutral||0) + ' neutral', top_stories_count: top.length, other_stories_count: other.length } }];"
+      },
+      "id": "prepare-slack",
+      "name": "Prepare Slack Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3080, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $json;\nconst html = d.html_content;\nif (!html) throw new Error('No HTML content');\nconst buffer = Buffer.from(html, 'utf8');\nreturn [{ json: { ...d }, binary: { file: await this.helpers.prepareBinaryData(buffer, d.filename, 'text/html') } }];"
+      },
+      "id": "prepare-binary",
+      "name": "Prepare HTML Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3300, 0]
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "file",
+        "name": "={{ $json.filename }}",
+        "driveId": { "__rl": true, "mode": "list", "value": "My Drive" },
+        "folderId": { "__rl": true, "value": "1yMai_HzO57MTrzqm9B2LdTCi1mByxVG2", "mode": "id" },
+        "options": { "simplifyOutput": false }
+      },
+      "id": "upload-gdrive",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [3520, 0],
+      "credentials": { "googleDriveOAuth2Api": { "id": "1zi4njTjXvWXxEDp", "name": "Google Drive account 3" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const driveResp = $json;\nconst prevData = $('Prepare HTML Binary').first().json;\nconst fileId = driveResp.id || driveResp.fileId;\nreturn [{ json: { file_id: fileId, gdrive_link: 'https://drive.google.com/file/d/' + fileId + '/view?usp=sharing', ...prevData } }];"
+      },
+      "id": "extract-links",
+      "name": "Extract Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3740, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $json.file_id }}/permissions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"role\": \"reader\", \"type\": \"anyone\"}",
+        "options": {}
+      },
+      "id": "make-public",
+      "name": "Make GDrive Public",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [3960, 0],
+      "credentials": { "googleDriveOAuth2Api": { "id": "1zi4njTjXvWXxEDp", "name": "Google Drive account 3" } }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "bw-newsletter-draft", "mode": "name" },
+        "text": "=📝 *{{ $('Extract Links').item.json.date_display }} — Blockwall Daily Insights*\n\n✅ New daily digest ready!\n\n📄 *Newsletter:* {{ $('Extract Links').item.json.gdrive_link }}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 *Overview*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n• Sources: *{{ $('Extract Links').item.json.total_articles }}*\n• Key stories: *{{ $('Extract Links').item.json.top_stories_count }}*\n• {{ $('Extract Links').item.json.sentiment_summary }}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔥 *Key Developments*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{{ $('Extract Links').item.json.top_stories_list }}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📰 *Other Stories*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{{ $('Extract Links').item.json.other_stories_list }}\n\n_React 👍 or 👎 • Reply with feedback_",
+        "otherOptions": {}
+      },
+      "id": "post-slack",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [4180, 0],
+      "credentials": { "slackOAuth2Api": { "id": "NtmVko6Iv9nWum85", "name": "Slack" } }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "bw-automation-logs", "mode": "name" },
+        "text": "=🎉 *Daily Pipeline Complete!*\n📅 {{ $('Extract Links').item.json.date_display }}\n📊 {{ $('Extract Links').item.json.total_articles }} sources → {{ $('Extract Links').item.json.top_stories_count }} key stories\n📄 {{ $('Extract Links').item.json.gdrive_link }}",
+        "otherOptions": {}
+      },
+      "id": "log-complete",
+      "name": "Log Completion",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [4400, 0],
+      "credentials": { "slackOAuth2Api": { "id": "NtmVko6Iv9nWum85", "name": "Slack" } }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "bw-automation-logs", "mode": "name" },
+        "text": "⚠️ *No Articles Found* - Check workflows 1 & 2.",
+        "otherOptions": {}
+      },
+      "id": "no-articles",
+      "name": "No Articles Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [660, 200],
+      "credentials": { "slackOAuth2Api": { "id": "NtmVko6Iv9nWum85", "name": "Slack" } }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": { "main": [[{ "node": "Fetch Daily Enriched Articles", "type": "main", "index": 0 }]] },
+    "Fetch Daily Enriched Articles": { "main": [[{ "node": "If Articles Exist", "type": "main", "index": 0 }]] },
+    "If Articles Exist": { "main": [[{ "node": "Prepare Context", "type": "main", "index": 0 }], [{ "node": "No Articles Alert", "type": "main", "index": 0 }]] },
+    "Prepare Context": { "main": [[{ "node": "Build Intro Prompt", "type": "main", "index": 0 }]] },
+    "Build Intro Prompt": { "main": [[{ "node": "Generate Intro", "type": "main", "index": 0 }]] },
+    "Generate Intro": { "main": [[{ "node": "Extract Intro", "type": "main", "index": 0 }]] },
+    "Extract Intro": { "main": [[{ "node": "Build Expand Prompt", "type": "main", "index": 0 }]] },
+    "Build Expand Prompt": { "main": [[{ "node": "Generate Expanded Summaries", "type": "main", "index": 0 }]] },
+    "Generate Expanded Summaries": { "main": [[{ "node": "Extract Expanded Summaries", "type": "main", "index": 0 }]] },
+    "Extract Expanded Summaries": { "main": [[{ "node": "Build LinkedIn Prompt", "type": "main", "index": 0 }]] },
+    "Build LinkedIn Prompt": { "main": [[{ "node": "Generate LinkedIn", "type": "main", "index": 0 }]] },
+    "Generate LinkedIn": { "main": [[{ "node": "Extract LinkedIn", "type": "main", "index": 0 }]] },
+    "Extract LinkedIn": { "main": [[{ "node": "Build HTML Newsletter", "type": "main", "index": 0 }]] },
+    "Build HTML Newsletter": { "main": [[{ "node": "Prepare Slack Message", "type": "main", "index": 0 }]] },
+    "Prepare Slack Message": { "main": [[{ "node": "Prepare HTML Binary", "type": "main", "index": 0 }]] },
+    "Prepare HTML Binary": { "main": [[{ "node": "Upload to Google Drive", "type": "main", "index": 0 }]] },
+    "Upload to Google Drive": { "main": [[{ "node": "Extract Links", "type": "main", "index": 0 }]] },
+    "Extract Links": { "main": [[{ "node": "Make GDrive Public", "type": "main", "index": 0 }]] },
+    "Make GDrive Public": { "main": [[{ "node": "Post to Slack", "type": "main", "index": 0 }]] },
+    "Post to Slack": { "main": [[{ "node": "Log Completion", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

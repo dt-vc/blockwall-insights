@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Insights Archive | Blockwall</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/archive.css">
+</head>
+<body data-theme="dark">
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-brand">
+        <div class="nav-logo">BW</div>
+        <span>Blockwall Insights</span>
+      </a>
+      <div class="nav-links">
+        <a href="index.html" class="nav-link active">Daily</a>
+        <a href="../weekly/index.html" class="nav-link soon">Weekly</a>
+        <a href="../monthly/index.html" class="nav-link soon">Monthly</a>
+      </div>
+      <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+        <span id="theme-icon">🌙</span>
+      </button>
+    </div>
+  </nav>
+
+  <main class="main">
+    <a href="../index.html" class="back-link">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      Back to Home
+    </a>
+
+    <div class="page-header">
+      <h1>Daily Insights</h1>
+      <p>Archive of all daily newsletters. Click any edition to read.</p>
+    </div>
+
+    <div class="cards-grid">
+      <!-- January 30, 2026 -->
+      <a href="blockwall-daily-2026-01-30.html" class="card">
+        <div class="card-image">
+          <img src="https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=600&h=300&fit=crop" alt="January 30, 2026" onerror="this.src='https://images.unsplash.com/photo-1639762681057-408e52192e55?w=600&h=300&fit=crop'">
+          <div class="card-badge">Latest</div>
+        </div>
+        <div class="card-content">
+          <time class="card-date">January 30, 2026</time>
+          <h3 class="card-title">Senate Advances CFTC Bill, Flying Tulip Hits $1B Valuation</h3>
+          <div class="card-stats">
+            <span class="stat">📊 83 sources</span>
+            <span class="stat bullish">🟢 15 bullish</span>
+            <span class="stat bearish">🔴 26 bearish</span>
+          </div>
+        </div>
+      </a>
+
+      <!-- Add more newsletter cards here as they're published -->
+      <!-- Template:
+      <a href="blockwall-daily-YYYY-MM-DD.html" class="card">
+        <div class="card-image">
+          <img src="IMAGE_URL" alt="DATE">
+        </div>
+        <div class="card-content">
+          <time class="card-date">MONTH DD, YYYY</time>
+          <h3 class="card-title">HEADLINE</h3>
+          <div class="card-stats">
+            <span class="stat">📊 XX sources</span>
+            <span class="stat bullish">🟢 XX bullish</span>
+            <span class="stat bearish">🔴 XX bearish</span>
+          </div>
+        </div>
+      </a>
+      -->
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <p>Blockwall Capital • Frankfurt, Germany</p>
+  </footer>
+
+  <script>
+    function toggleTheme() {
+      const body = document.body;
+      const icon = document.getElementById('theme-icon');
+      if (body.getAttribute('data-theme') === 'dark') {
+        body.setAttribute('data-theme', 'light');
+        icon.textContent = '☀️';
+        localStorage.setItem('theme', 'light');
+      } else {
+        body.setAttribute('data-theme', 'dark');
+        icon.textContent = '🌙';
+        localStorage.setItem('theme', 'dark');
+      }
+    }
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.body.setAttribute('data-theme', savedTheme);
+    document.getElementById('theme-icon').textContent = savedTheme === 'dark' ? '🌙' : '☀️';
+  </script>
+</body>
+</html>
