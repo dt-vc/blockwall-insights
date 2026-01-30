@@ -189,26 +189,6 @@ Edit CSS variables in `assets/css/archive.css` and `assets/css/newsletter.css`:
 
 ---
 
-## 📋 Newsletter Quality Checklist
-
-For each new newsletter, verify:
-
-- [ ] **Filename**: `blockwall-daily-YYYY-MM-DD.html`
-- [ ] **Date**: Correct in title, header, and card
-- [ ] **Stats**: Accurate source count, bullish/bearish numbers
-- [ ] **Intro**: Clean, no `[1][2][3]` artifacts
-- [ ] **Stories** (each one):
-  - [ ] Clear, accurate title
-  - [ ] Working image (from article or appropriate fallback)
-  - [ ] Source name and category
-  - [ ] **3-4 sentence summary** with context
-  - [ ] Working link to original article
-- [ ] **Other Stories**: All links work
-- [ ] **LinkedIn Post**: Included and formatted
-- [ ] **Sources List**: Complete with working links
-- [ ] **Card Added**: To `daily/index.html` with "Latest" badge
-
----
 
 ## 🔧 Troubleshooting
 
